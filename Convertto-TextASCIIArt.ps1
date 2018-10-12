@@ -453,18 +453,18 @@ Process {
             $cacheFolder = Join-Path $env:APPDATA "asciiart"
             $cacheFile = Join-Path $cacheFolder "$textHash.txt"
             New-Item -ItemType Directory -Force -Path $cacheFolder | Out-Null
-
+			$asciiArtText = ""
             if (Test-Path $cacheFile)
             {
-                $testEncode = Get-Content $cacheFile
+                $asciiArtText = [System.IO.File]::ReadAllText($cacheFile)
             }
             else {
-                $testEncode = [uri]::EscapeDataString($Text)
-                $url = "http://artii.herokuapp.com/make?text=$testEncode&font=$FontName"
+                $encodedText = [uri]::EscapeDataString($Text)
+                $url = "http://artii.herokuapp.com/make?text=$encodedText&font=$FontName"
                 Try {
                     $WebsiteApi = Invoke-WebRequest -Uri $url -ErrorAction Stop
-                    Write-Host $WebsiteApi.Content -ForegroundColor $FontColor
                     $WebsiteApi.Content | Out-File $cacheFile
+					$asciiArtText = $WebsiteApi.Content
                 }
                 catch {
                     $ErrorMessage = $_.Exception.Message
@@ -473,6 +473,8 @@ Process {
                     Write-Host $errMessage -BackgroundColor DarkRed
                 }
             }
+			
+			Write-Host $asciiArtText -ForegroundColor $FontColor
         } #Online
     } #switch pscmdlet
 }
