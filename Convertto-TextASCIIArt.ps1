@@ -41,11 +41,11 @@
 .EXAMPLE
     PS C:\>.\Convertto-TextASCIIArt -Text '# This !'
 
-      ¦¦  ¦¦     ¦¦¦¦¦¦ ¦¦  ¦¦ ¦¦   ¦¦¦¦     ¦¦
-    ¦¦¦¦¦¦¦¦¦¦     ¦¦   ¦¦  ¦¦ ¦¦ ¦¦         ¦¦  
-      ¦¦  ¦¦       ¦¦   ¦¦¦¦¦¦ ¦¦   ¦¦       ¦¦  
-    ¦¦¦¦¦¦¦¦¦¦     ¦¦   ¦¦  ¦¦ ¦¦     ¦¦    
-      ¦¦  ¦¦       ¦¦   ¦¦  ¦¦ ¦¦ ¦¦¦¦       ¦¦  
+      ï¿½ï¿½  ï¿½ï¿½     ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½  ï¿½ï¿½ ï¿½ï¿½   ï¿½ï¿½ï¿½ï¿½     ï¿½ï¿½
+    ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½     ï¿½ï¿½   ï¿½ï¿½  ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½         ï¿½ï¿½  
+      ï¿½ï¿½  ï¿½ï¿½       ï¿½ï¿½   ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½   ï¿½ï¿½       ï¿½ï¿½  
+    ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½     ï¿½ï¿½   ï¿½ï¿½  ï¿½ï¿½ ï¿½ï¿½     ï¿½ï¿½    
+      ï¿½ï¿½  ï¿½ï¿½       ï¿½ï¿½   ï¿½ï¿½  ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½       ï¿½ï¿½  
     
     Shows local font on the script not internet required
 #>
@@ -301,6 +301,35 @@ Begin {
         <#0#> Write-Host "  " -BackgroundColor $FontColor -NoNewline; Write-Host " " -NoNewline; Write-Host "  " -BackgroundColor $FontColor -NoNewline; Write-Host " " 
         <#0#> Write-Host " " -NoNewline; Write-Host $(" " * 3) -BackgroundColor $FontColor -NoNewline; Write-Host "  "}
     }#if
+
+        
+    # https://stackoverflow.com/a/45884020/1141876
+    function Get-FNVHash {
+
+        param(
+            [string]$InputString
+        )
+
+        # Initial prime and offset chosen for 32-bit output
+        # See https://en.wikipedia.org/wiki/Fowlerâ€“Nollâ€“Vo_hash_function
+        [uint32]$FNVPrime = 16777619
+        [uint32]$offset = 2166136261
+
+        # Convert string to byte array, may want to change based on input collation
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes($InputString)
+
+        # Copy offset as initial hash value
+        [uint32]$hash = $offset
+
+        foreach($octet in $bytes)
+        {
+            # Apply XOR, multiply by prime and mod with max output size
+            $hash = $hash -bxor $octet
+            $hash = $hash * $FNVPrime % [System.Math]::Pow(2,32)
+        }
+        return $hash
+    }
+
 }
 Process {
     switch ($PsCmdlet.ParameterSetName) {
@@ -419,17 +448,33 @@ Process {
             if ($text -eq '# This is test !') {
                 $text = 'http://vcloud-lab.com'
             }
-            $testEncode = [uri]::EscapeDataString($Text)
-            $url = "http://artii.herokuapp.com/make?text=$testEncode&font=$FontName"
-            Try {
-                $WebsiteApi = Invoke-WebRequest -Uri $url -ErrorAction Stop
-                Write-Host $WebsiteApi.Content -ForegroundColor $FontColor
+            
+            $textHash =  Get-FNVHash $Text
+            $cacheFolder = Join-Path $env:APPDATA "asciiart"
+            $cacheFile = Join-Path $cacheFolder "$textHash.txt"
+            New-Item -ItemType Directory -Force -Path $cacheFolder | Out-Null
+			$asciiArtText = ""
+            if (Test-Path $cacheFile)
+            {
+                $asciiArtText = [System.IO.File]::ReadAllText($cacheFile)
             }
-            catch {
-                $errMessage = "Check your internet connection, Verify below url in browser`n"
-                $errMessage += $url
-                Write-Host $errMessage -BackgroundColor DarkRed
+            else {
+                $encodedText = [uri]::EscapeDataString($Text)
+                $url = "http://artii.herokuapp.com/make?text=$encodedText&font=$FontName"
+                Try {
+                    $WebsiteApi = Invoke-WebRequest -Uri $url -ErrorAction Stop
+                    $WebsiteApi.Content | Out-File $cacheFile
+					$asciiArtText = $WebsiteApi.Content
+                }
+                catch {
+                    $ErrorMessage = $_.Exception.Message
+                    $errMessage = "Check your internet connection, Verify below url in browser`n $ErrorMessage`n"
+                    $errMessage += $url
+                    Write-Host $errMessage -BackgroundColor DarkRed
+                }
             }
+			
+			Write-Host $asciiArtText -ForegroundColor $FontColor
         } #Online
     } #switch pscmdlet
 }
